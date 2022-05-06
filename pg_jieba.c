@@ -21,6 +21,7 @@
 #include "tsearch/ts_public.h"
 
 #include "jieba.h"
+#include "opencc.h"
 
 PG_MODULE_MAGIC;
 
@@ -35,6 +36,7 @@ typedef struct
 	char	   *buffer;			/* text to parse */
 	int			len;			/* length of the text in buffer */
 	JiebaCtx   *ctx;
+	opencc_t   *opencc;
 	ParStat    *stat;
 } ParserState;
 
@@ -79,6 +81,7 @@ static char* extract_dict_list(const char *dictsString);
 static char* jieba_get_tsearch_config_filename(const char *basename, const char *extension);
 
 static JiebaCtx* jieba = NULL;
+static opencc_t* opencc = NULL;
 
 /* GUC variables */
 static char *pg_jieba_hmm_model = "jieba_hmm";
@@ -93,7 +96,6 @@ static bool userDictsValid = true;
 
 static bool check_user_dict(char **newval, void **extra, GucSource source);
 static void assign_user_dict(const char *newval, void *extra);
-
 
 /*
  * Module load callback
@@ -126,6 +128,10 @@ _PG_fini(void)
 		Jieba_Free(jieba);
 		jieba = NULL;
 	}
+        if (opencc) {
+                opencc_close(opencc);
+                opencc = NULL;
+        }
 }
 
 /*
@@ -134,13 +140,33 @@ _PG_fini(void)
 Datum
 jieba_start(PG_FUNCTION_ARGS)
 {
+        ereport(LOG, (errmsg("[00] OpenCC -- DEBUG")));
 	ParserState* const pst = (ParserState *) palloc0(sizeof(ParserState));
-	pst->buffer = (char *) PG_GETARG_POINTER(0);
+        ereport(LOG, (errmsg("[01] OpenCC -- DEBUG")));
+	pst->opencc = opencc;
+        ereport(LOG, (errmsg("[02] OpenCC -- DEBUG")));
+	char * original = (char *) PG_GETARG_POINTER(0);
+        ereport(LOG, (errmsg("[03] OpenCC -- DEBUG")));
+        ereport(LOG,
+				(errmsg("OpenCC Converting: %s - %s - %s",
+                                        original, pst->opencc, opencc)));
+        ereport(LOG, (errmsg("[04] OpenCC -- DEBUG")));
+        opencc_t opencc_tmp = opencc_open("s2t.json");
+        char * converted = opencc_convert_utf8(opencc_tmp, original, strlen(original));
+        opencc_close(opencc_tmp);
+        ereport(LOG, (errmsg("[05] OpenCC -- DEBUG")));
+        ereport(LOG,
+				(errmsg("OpenCC Converted: %s - %s - %s",
+                                        converted, pst->opencc, opencc)));
+	pst->buffer = converted;
 	pst->len = PG_GETARG_INT32(1);
+        ereport(LOG, (errmsg("[06] OpenCC -- DEBUG")));
 
 	pst->ctx = jieba;
 
+        ereport(LOG, (errmsg("[07] OpenCC -- DEBUG")));
 	pst->stat = Jieba_Cut(pst->ctx, pst->buffer, pst->len, MODE_MIX);
+        ereport(LOG, (errmsg("[08] OpenCC -- DEBUG")));
 
 	PG_RETURN_POINTER(pst);
 }
@@ -296,6 +322,7 @@ recompute_dicts_path(void)
 	char	   *new_dicts;
 
 	JiebaCtx   *new_jieba = NULL;
+	opencc_t   *new_opencc = NULL;
 	char* dict_path;
 	char* hmm_model_path;
 
@@ -319,6 +346,7 @@ recompute_dicts_path(void)
 		 init will take a few seconds to load dicts.
 		 */
 		new_jieba = Jieba_New(dict_path, hmm_model_path, new_dicts);
+		new_opencc = opencc_open("t2s.json");
 	}
 	MemoryContextSwitchTo(oldcxt);
 
@@ -332,6 +360,13 @@ recompute_dicts_path(void)
 		jieba = NULL;
 	}
 	jieba = new_jieba;
+
+	if (opencc) {
+		opencc_close(opencc);
+		opencc = NULL;
+	}
+        opencc = new_opencc;
+
 
 	/* Mark the path valid. */
 	userDictsValid = true;
