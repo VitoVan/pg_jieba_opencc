@@ -16,10 +16,12 @@
 #include <vector>
 
 #include "jieba.h"
+#include "opencc.h"
 
 #include "cppjieba/Jieba.hpp"
 
 using namespace cppjieba;
+using namespace opencc;
 using namespace std;
 
 #ifdef __cplusplus
@@ -35,6 +37,8 @@ struct JiebaCtx
 	QuerySegment* query_seg_;
 	MPSegment* mp_seg_;
 	HMMSegment* hmm_seg_;
+
+	SimpleConverter* converter;
 
 	unordered_map<string, int> lex_id_;
 };
@@ -52,6 +56,7 @@ JiebaCtx *
 Jieba_New(const char* dict_path, const char* model_path, const char* user_dict_path)
 {
 	JiebaCtx* ctx = new JiebaCtx();
+        ctx->converter = new SimpleConverter("t2s.json");
 	ctx->dict_trie_ = new DictTrie(dict_path, user_dict_path);
 	ctx->hmm_model_ = new HMMModel(model_path);
 	ctx->mix_seg_ = new MixSegment(ctx->dict_trie_, ctx->hmm_model_);
@@ -78,6 +83,8 @@ Jieba_Free(JiebaCtx* ctx)
 	delete ctx->dict_trie_;
 	delete ctx->hmm_model_;
 
+	delete ctx->converter;
+
 	delete ctx;
 }
 
@@ -85,8 +92,8 @@ ParStat *
 Jieba_Cut(JiebaCtx* ctx, const char* str, int len, int mode)
 {
 	SegmentBase* x;
-
-	string sentence(str, len);
+	string original_sentence(str, len);
+	string sentence = ctx->converter->Convert(original_sentence);
 	vector<string> *words = new vector<string>();
 
 	switch (mode) {

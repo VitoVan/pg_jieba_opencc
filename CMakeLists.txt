@@ -8,6 +8,17 @@ project("${PG_JIEBA_PROJECT_ID}")
 
 message(STATUS "Setting ${CMAKE_PROJECT_NAME} build type - ${CMAKE_BUILD_TYPE}")
 
+find_package(PkgConfig)
+if (PKG_CONFIG_FOUND)
+  pkg_check_modules(OpenCC "opencc")
+  if(NOT OpenCC_FOUND)
+      message(FATAL_ERROR " Please check your OpenCC installation.")
+  else(NOT OpenCC_FOUND)
+    include_directories(${OpenCC_INCLUDE_DIRS})
+    link_directories(${OpenCC_LIBRARY_DIRS})
+  endif(NOT OpenCC_FOUND)
+endif()
+
 find_package(PostgreSQL REQUIRED)
 if(NOT PostgreSQL_FOUND)
     message(FATAL_ERROR " Please check your PostgreSQL installation.")
@@ -97,6 +108,7 @@ else(APPLE)
 endif(APPLE)
 
 add_library(${PG_JIEBA_LIBRARY_NAME} ${LIBRARY_MODE_TARGET} ${SOURCE_FILES})
+target_link_libraries(${PG_JIEBA_LIBRARY_NAME} PUBLIC ${OpenCC_LINK_LIBRARIES})
 set_target_properties("${PG_JIEBA_LIBRARY_NAME}" PROPERTIES
                       OUTPUT_NAME "${PG_JIEBA_DLL_NAME}"
                       CXX_STANDARD 11
